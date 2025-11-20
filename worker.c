@@ -5,41 +5,33 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        printf("Error: Uso: ./worker P fd_in fd_master\n");
-        exit(1);
+        fprintf(stderr, "uso: worker P fd_in fd_master\n");
+        return 1;
     }
-    
+
     int P = atoi(argv[1]);
     int fd_in = atoi(argv[2]);
     int fd_master = atoi(argv[3]);
-    
-    printf("Worker P=%d iniciado (fd_in=%d, fd_master=%d)\n", P, fd_in, fd_master);
-    
+
+    int n;
     while (1) {
-        int numero;
-        int bytes_leidos = read(fd_in, &numero, sizeof(numero));
-        
-        // Verificar si la tubería se cerró o error
-        if (bytes_leidos == 0) {
-            printf("Worker P=%d: Tubería cerrada - terminando\n", P);
+        int r = read(fd_in, &n, sizeof(int));
+        if (r <= 0) break;
+
+        if (n == -1) {
             break;
         }
-        
-        if (bytes_leidos != sizeof(numero)) {
-            printf("Worker P=%d: Error leyendo tubería\n", P);
-            break;
+
+        if (n == P) {
+            int x = 1;
+            write(fd_master, &x, sizeof(int));
+        } else if (n % P == 0) {
+            int x = 0;
+            write(fd_master, &x, sizeof(int));
+        } else {
+            /* todavía no hay worker siguiente en esta versión */
         }
-        
-        printf("Worker P=%d recibió N=%d\n", P, numero);
-        
-        if (numero == -1) {
-            printf("Worker P=%d recibió orden STOP\n", P);
-            break;
-        }
-        
-        printf("  - Procesando número %d...\n", numero);
     }
-    
-    printf("Worker P=%d terminado\n", P);
+
     return 0;
 }
