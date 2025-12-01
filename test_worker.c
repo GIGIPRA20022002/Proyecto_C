@@ -3,63 +3,108 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <assert.h>
 
-static void test(int P, int vals[], int n) {
-    int t1[2], t2[2];
-    pipe(t1);
-    pipe(t2);
+#define PRIME 1
+#define NOT_PRIME 2
 
-    pid_t pid = fork();
+int main(int argc, char *argv[]) {
+    /* Verificar argumentos: P fd_in fd_master */
+    if (argc < 4) {
+        fprintf(stderr, "usage: worker P fd_in fd_master\n");
+        return 1;
+    }
 
-    if (pid == 0) {
-        close(t1[1]);
-        close(t2[0]);
+    int P = atoi(argv[1]);       /* Número primo que gestiona este worker */
+    int fd_in = atoi(argv[2]);   /* Tubería para recibir números */
+    int fd_master = atoi(argv[3]); /* Tubería para enviar resultados al master */
 
-        char p_str[12], in_str[12], out_str[12];
-        sprintf(p_str, "%d", P);
-        sprintf(in_str, "%d", t1[0]);
-        sprintf(out_str, "%d", t2[1]);
+    int fd_next = -1;    /* Tubería hacia el siguiente worker */
+    int pid_next = -1;   /* PID del siguiente worker */
 
-        char *args[] = { "worker", p_str, in_str, out_str, NULL };
-        execvp("./worker", args);
-        perror("exec worker");
-        exit(1);
+    int n;
+    while (1) {
+        /* Leer número N de la tubería de entrada */
+        int r = read(fd_in, &n, sizeof(int));
+        assert(r == sizeof(int));
+        if (r <= 0) break;
 
-    } else {
-        close(t1[0]);
-        close(t2[1]);
-
-        for (int i = 0; i < n; i++) {
-            int x = vals[i];
-            write(t1[1], &x, sizeof(int));
-
-            if (x == -1)
-                break;
-
-            /* leer respuesta si la hay */
-            if (x == P || x % P == 0) {
-                int r;
-                read(t2[0], &r, sizeof(int));
-                printf("P=%d, N=%d -> %s\n", P, x, r ? "prime" : "not prime");
-            } else {
-                printf("P=%d, N=%d -> pasó al siguiente\n", P, x);
+        /* Si es orden de STOP */
+        if (n == -1) {
+            /* Reenviar STOP al siguiente worker si existe */
+            if (fd_next != -1) {
+                int w = write(fd_next, &n, sizeof(int));
+                assert(w == sizeof(int));
+                waitpid(pid_next, NULL, 0);  /* Esperar que termine */
             }
+            break;
         }
 
-        close(t1[1]);
-        close(t2[0]);
-        wait(NULL);
+        /* Si N es igual al primo P que gestiono */
+        if (n == P) {
+            char mensaje[5];
+            mensaje[0] = PRIME;
+            *(int*)(mensaje + 1) = n;
+            int w = write(fd_master, mensaje, 5);
+            assert(w == 5);
+        }
+        /* Si N es divisible por P */
+        else if (n % P == 0) {
+            char mensaje[5];
+            mensaje[0] = NOT_PRIME;
+            *(int*)(mensaje + 1) = n;
+            int w = write(fd_master, mensaje, 5);
+            assert(w == 5);
+        }
+        /* Si no es divisible y no es igual */
+        else {
+            if (fd_next != -1) {
+                /* Ya existe siguiente worker: pasarle N */
+                int w = write(fd_next, &n, sizeof(int));
+                assert(w == sizeof(int));
+            } else {
+                /* Crear nuevo worker para N */
+                int newpipe[2];
+                int p = pipe(newpipe);
+                assert(p == 0);
+
+                pid_t pid = fork();
+                assert(pid != -1);
+                
+                if (pid == 0) {
+                    /* Proceso hijo: nuevo worker */
+                    close(newpipe[1]);  /* Cerrar extremo de escritura */
+                    
+                    char p_str[12], in_str[12], master_str[12];
+                    sprintf(p_str, "%d", n);      /* El nuevo primo es N */
+                    sprintf(in_str, "%d", newpipe[0]); /* Leerá de aquí */
+                    sprintf(master_str, "%d", fd_master); /* Mismo master */
+
+                    char *args[] = { "worker", p_str, in_str, master_str, NULL };
+                    execvp("./worker", args);
+                    perror("exec worker");
+                    exit(1);
+                } else {
+                    /* Proceso padre: worker actual */
+                    close(newpipe[0]);  /* Cerrar extremo de lectura */
+                    fd_next = newpipe[1];  /* Guardar para escribir al nuevo */
+                    pid_next = pid;        /* Guardar PID del hijo */
+                    
+                    /* Enviar N al nuevo worker */
+                    int w = write(fd_next, &n, sizeof(int));
+                    assert(w == sizeof(int));
+                }
+            }
+        }
     }
-}
 
-int main() {
-    printf("=== Test 1: Worker P=2 ===\n");
-    int a[] = {2, 4, 3, 5, -1};
-    test(2, a, 5);
+    /* Limpieza final */
+    if (fd_next != -1) {
+        close(fd_next);
+        waitpid(pid_next, NULL, 0);  /* Asegurar que no quede zombie */
+    }
 
-    printf("\n=== Test 2: Worker P=3 ===\n");
-    int b[] = {3, 6, 5, 7, -1};
-    test(3, b, 5);
-
+    close(fd_in);
+    close(fd_master);
     return 0;
 }
