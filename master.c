@@ -15,7 +15,7 @@
 #define TUBE_MASTER_TO_CLIENT "tube_master_to_client"
 
 // Clés pour les semaphores
-#define FTOK_FILE "/tmp/projet_cc2"
+#define FTOK_FILE "."
 #define FTOK_ID_MUTEX 1
 #define FTOK_ID_SYNC 2
 
@@ -94,7 +94,7 @@ static int lire_du_worker(int fd, Message *msg) {
     return 1;
 }
 
-static int est_premier_connu(int n) {
+/* static int est_premier_connu(int n) {
     if (n < 2) return 0;
     
     for (int i = 2; i * i <= n; i++) {
@@ -102,7 +102,7 @@ static int est_premier_connu(int n) {
     }
     
     return 1;
-}
+} */
 
 int main(void) {
     // Initialisation

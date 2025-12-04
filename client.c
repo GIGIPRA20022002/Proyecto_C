@@ -14,7 +14,7 @@
 #define TUBE_MASTER_TO_CLIENT "tube_master_to_client"
 
 //Semaphores
-#define FTOK_FILE "/tmp/projet_cc2"
+#define FTOK_FILE "."
 #define FTOK_ID_MUTEX 1
 #define FTOK_ID_SYNC 2
 
